@@ -1,3 +1,89 @@
+res_run <- function(x) {
+  
+  tibble(
+    
+    file =
+      
+      dir(
+        
+        pattern = "armet_",
+        
+        "data/",
+        
+        full.names = T
+        
+      ) %>%
+      
+      grep("input.rds", ., value = T)
+    
+  ) %>%
+    
+    extract(file, "cancer_type", ".*armet_([A-Z]+)_input.*", remove = FALSE) %>%
+    
+    mutate(
+      
+      stratification_cellularity =
+        
+        furrr::future_map(
+          
+          file, ~ readRDS(.x) %>%
+            
+            test_stratification_cellularity(
+              
+              survival::Surv(PFI.time.2, PFI.2) ~ .,
+              
+              patient,
+              
+              transcript,
+              
+              count,
+              
+              cores = 1,
+              
+              reference = x 
+              
+            )
+          
+        )
+      
+    )
+}
+
+CIBERSORT <- function(x, c1, c2, c3, ref, meth, act) {
+  as_tibble(setDT(x)[, lapply(.SD, sum), by = c(c1, c2), .SDcols = c3]) %>%
+    deconvolve_cellularity(
+      .sample = !!sym(c1),
+      .transcript = !!sym(c2),
+      .abundance = !!sym(c3),
+      reference = ref,
+      method = meth,
+      action = act
+    )
+}
+
+TCGA_transcript <- function(cancer){
+  as_tibble(
+    data.table::setDT(
+      map_dfr(as.list(list.files(paste0("data/Transcript/"))), 
+              function(i){
+                data.table::fread(paste0("data/Transcript/", i)) %>%
+                  mutate(sample = i)
+              }) %>%
+        tidybulk::rename(raw_count = `V2`) %>%
+        mutate(ensembl_id = gsub("\\..*", "", V1)) %>%
+        inner_join(toTable(org.Hs.egENSEMBL)) %>%
+        inner_join(toTable(org.Hs.egSYMBOL)) %>%
+        dplyr::select(sample, symbol, raw_count) %>%
+        mutate(sample = gsub("counts.*", "counts.gz", sample)) %>%
+        inner_join(
+          read_csv(paste0("data/gdc_sample_sheet.csv")) %>% mutate(sample = `File Name`)) %>%
+        mutate(sample = `Case ID`) %>%
+        dplyr::select(sample, symbol, raw_count)
+    )[, list(raw_count = sum(raw_count)), by = c("sample", "symbol")]) %>%  #Sum the raw_counts of duplicated rows
+    tidybulk::scale_abundance(.sample = sample, .abundance = raw_count, .transcript = symbol)
+}
+
+
 list_TCGA <- c("CHOL", "UCS", "DLBC", "UVM", "MESO", "ACC", "KICH", "TGCT", "READ", 
                "PCPG", "PAAD", "SARC", "KIRP", "LIHC", "BLCA", "STAD", "COAD", "SKCM",
                "PRAD", "LUSC", "THCA", "LGG", "HNSC", "KIRC", "UCEC", "LUAD", "OV", "GBM",
@@ -354,7 +440,6 @@ NK_T_receptor_heatmap_log10 <- function(cancer){
 }
 
 NK_selectT_receptor_heatmap_log10 <- function(cancer){
-  cancer = "LGG"
   Immunereceptor <- list("KLRK1", "KLRC1", "KLRC2", "KLRC3", "KLRC4", "CRTAM", 
                          "CD226", "CD244", "KIR2DL4", "NCR1", "NCR2", "NCR3")
   x <- LGGno0 %>%
@@ -444,3 +529,32 @@ NK_T_genelist_heatmap_log10 <- function(cancer, genelist){
     theme(axis.text.x = element_text(angle = -45)) +
     labs(fill = "Correlation")
 }
+
+
+options(connectionObserver = NULL)
+
+library(tidyverse)
+library(tidybulk)
+library(survminer)
+library(survival)
+library(gapminder)
+library(foreach)
+library(org.Hs.eg.db)
+library(cowplot)
+library(ggsci)
+library(GGally)
+library(gridExtra)
+library(grid)
+library(reshape)
+library(Hmisc)
+library(viridis)
+library(furrr)
+
+LGG <- TCGA_transcript("LGG") %>%
+  filter(symbol == "PDGFD"|symbol == "PDGFRB"|symbol == "KLRK1"|symbol == "KLRC1"|
+           symbol == "KLRC2"|symbol == "KLRC3"|symbol == "KLRC4"|symbol == "NCR2"|
+           symbol == "NCR1"|symbol == "NCR3"|symbol == "KIR2DL4"|symbol == "CRTAM"|
+           symbol == "CD244"|symbol == "CD226"|symbol == "TGFBI"|symbol == "IGFBP3"|
+           symbol == "CHI3L1") 
+
+LGGno0 <- no0_CIBERSORT("LGG")
