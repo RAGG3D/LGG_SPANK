@@ -12,7 +12,7 @@ source("src/functions.R")
 All the figure should be saved as a PDF for further edits.
 (After modification)
 
-![image](https://github.com/RAGG3D/LGG_IL2NK/blob/main/figures/LGG-p1 20cm.jpg)
+![image](https://github.com/RAGG3D/LGG_SPANK/blob/main/figure/LGG-p1%2020cm.jpg)
 
 ## Figure 2 (See Figure scripts/Figure 2.R)
 ### FIG 2A
